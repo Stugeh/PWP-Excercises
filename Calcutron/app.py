@@ -1,5 +1,6 @@
-from flask import Flask, request
 import math
+from flask import Flask, request
+
 
 app = Flask("Hello")
 
@@ -39,7 +40,8 @@ def division(number_1, number_2):
 
 @app.route("/trig/<func>")
 def trig(func):
-    if func != "sin" and func != "cos" and func != "tan":
+    value = 0
+    if func not in ("sin", "cos", "tan"):
         return "Operation not found", 404
 
     try:
@@ -51,17 +53,18 @@ def trig(func):
     try:
         units = request.args["unit"]
     except KeyError:
-        units = "degree"
+        units = "radian"
 
-    if units != "degree" and units != "radian":
+    if units not in ("degree", "radian"):
         return "Invalid query parameter value(s)", 400
 
     if units == "degree":
-        math.radians(angle)
+        angle = math.radians(angle)
 
     if func == "sin":
-        return str(round(math.sin(angle), 3))
-    if func == "cos":
-        return str(round(math.cos(angle), 3))
-    if func == "tan":
-        return str(round(math.tan(angle), 3))
+        value = str(round(math.sin(angle), 3))
+    elif func == "cos":
+        value = str(round(math.cos(angle), 3))
+    elif func == "tan":
+        value = str(round(math.tan(angle), 3))
+    return value, 200
