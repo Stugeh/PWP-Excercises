@@ -1,0 +1,73 @@
+{
+    "@controls": {
+        "self": {
+            "href": "/api/artists/"
+        },
+        "mumeta:add-artist": {
+            "href":"/api/artists/",
+            "method": "POST",
+            "schema":{
+                "properties": {
+                    "name": {
+                        "description": "name of the artist",
+                        "type": "string"
+                    },
+                    "unique_name": {
+                        "description": "lowercase name",
+                        "type": "string"
+                    },
+                    "location":{
+                        "description": "place of origin",
+                        "type": "string"
+                    },
+                    "formed": {
+                        "description": "when the band was formed",
+                        "type": "string",
+                        "pattern": "^[0-9]{4}-[01][0-9]-[0-3][0-9]$"
+                    },
+                    "disbanded": {
+                        "description": "when the band was disbanded if it was",
+                        "type": "string",
+                        "pattern": "^[0-9]{4}-[01][0-9]-[0-3][0-9]$"
+                    }
+                },
+                "required": ["name", "unique_name"]
+            } 
+        },
+        "mumeta:item": {
+            "href": "/api/artists/?{artist}/",
+            "isHrefTemplate":true,
+            "method": "GET"
+        },
+        "mumeta:albums-all": {
+            "href": "api/albums/",
+            "method": "GET"
+        }
+    },
+    "items": [
+        {
+            "name": "Scandal",
+            "unique_name": "scandal",
+            "location": "Osaka, JP",
+            "formed": "2006-08-21",
+            "disbanded": null,
+            "@controls":{
+                "self":{
+                    "href":"/api/artists/scandal/"
+                },
+                "mumeta:albums-by": {
+                    "href": "/api/artists/scandal/albums",
+                    "method": "GET"
+                },
+                "mumeta:edit": {
+                    "href": "/api/artists/scandal/",
+                    "method": "PUT"
+                },
+                "mumeta:delete": {
+                    "href": "/api/artists/scandal/",
+                    "method": "DELETE"
+                }
+            }
+        }
+    ]
+}
