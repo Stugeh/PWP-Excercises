@@ -1,4 +1,9 @@
-{
+{   
+    "@namespaces": {
+        "mumeta": {
+            "name": "/musicmeta/link-relations#"
+        }
+    },
     "@controls": {
         "self": {
             "href": "/api/artists/"
@@ -54,18 +59,6 @@
             "@controls":{
                 "self":{
                     "href":"/api/artists/scandal/"
-                },
-                "mumeta:albums-by": {
-                    "href": "/api/artists/scandal/albums",
-                    "method": "GET"
-                },
-                "mumeta:edit": {
-                    "href": "/api/artists/scandal/",
-                    "method": "PUT"
-                },
-                "mumeta:delete": {
-                    "href": "/api/artists/scandal/",
-                    "method": "DELETE"
                 }
             }
         }
