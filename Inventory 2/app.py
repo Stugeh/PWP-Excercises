@@ -4,13 +4,13 @@ from flask_restful import Resource, Api
 from sqlalchemy.engine import Engine
 from sqlalchemy import event
 
-app = Flask("inventory")
+app = Flask(__name__)
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///test.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
 db = SQLAlchemy(app)
 
 api = Api(app)
-
 
 # SCHEMAS #
 @event.listens_for(Engine, "connect")
@@ -20,7 +20,7 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
     cursor.close()
 
 
-# class StorageItem(db.Model):
+# class StorageEntry(db.Model):
 #     id = db.Column(db.Integer, primary_key=True, nullable=False)
 #     qty = db.Column(db.Integer, nullable=False)
 #     location = db.Column(db.String(64), nullable=False)
@@ -37,7 +37,6 @@ class Product(db.Model):
 
 # RESOURCES #
 class ProductItem(Resource):
-
     def get(self, prod_handle):
         if prod_handle is not None:
             result = Product.query.filter_by(handle=prod_handle).first()
@@ -48,7 +47,6 @@ class ProductItem(Resource):
 
 
 class Inventory(Resource):
-
     def get(self):
         try:
             products = Product.query.all()
@@ -91,5 +89,92 @@ class Inventory(Resource):
             abort(415, "Request content type must be JSON")
 
 
+# HYPERMEDIA BUILDERS #
+
+class MasonBuilder(dict):
+    def add_error(self, title, details):
+        self["@error"] = {
+            "@message": title,
+            "@messages": [details],
+        }
+
+    def add_namespace(self, ns, uri):
+        if "@namespaces" not in self:
+            self["@namespaces"] = {}
+        self["@namespaces"][ns] = {
+            "name": uri
+        }
+
+    def add_control(self, ctrl_name, href, **kwargs):
+        if "@controls" not in self:
+            self["@controls"] = {}
+        self["@controls"][ctrl_name] = kwargs
+        self["@controls"][ctrl_name]["href"] = href
+
+
+class InventoryBuilder(MasonBuilder):
+    @staticmethod
+    def item_schema():
+        schema = {
+            "type": "object",
+            "required": ["handle", "weight", "price"]
+        }
+        props = schema["properties"] = {}
+        props["handle"] = {
+            "type": "string"
+        }
+        props["weight"] = {
+            "type": "number"
+        }
+        props["price"] = {
+            "type": "number"
+        }
+        return schema
+
+    def add_control_all_products(self):
+        self.add_control(
+            "storage:products-all",
+            href='/api/products/',
+            method="GET"
+        )
+
+    def add_control_delete_product(self, handle):
+        self.add_control(
+            "storage:delete",
+            href='/api/products/' + handle + '/',
+            method="DELETE"
+        )
+
+    def add_control_add_product(self):
+        self.add_control(
+            "storage:add-product",
+            "/api/products/",
+            method="POST",
+            encoding="json",
+            title="Add product",
+            schema=self.item_schema()
+        )
+
+    def add_control_edit_product(self, handle):
+        self.add_control(
+            "edit",
+            href='/api/products/' + handle + '/',
+            method="PUT",
+            encoding="json",
+            schema=self.item_schema()
+        )
+
+# class test():
+#     inventory = InventoryBuilder()
+#     inventory.add_control_add_product()
+#     #inventory.add_control_all_products()
+#     print(inventory)
+
+
 api.add_resource(Inventory, '/api/products/')
 api.add_resource(ProductItem, '/api/products/<prod_handle>/')
+
+
+
+
+
