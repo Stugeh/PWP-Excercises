@@ -1,3 +1,4 @@
+import json
 from flask import Flask, request, abort, Response
 from flask_sqlalchemy import SQLAlchemy
 from flask_restful import Resource, Api
@@ -36,37 +37,71 @@ class Product(db.Model):
 
 
 # RESOURCES #
+
 class ProductItem(Resource):
+    def product_check(self, prod_handle):
+        result = Product.query.filter_by(handle=prod_handle).first()
+        if not result:
+            body = MasonBuilder(resource_url=request.path)
+            body.add_error('Not Found', 'No product found by handle: ' + prod_handle)
+            return Response(json.dumps(body), status=404, mimetype="application/vnd.mason+json")
+        return result
+
     def get(self, prod_handle):
         if prod_handle is not None:
-            result = Product.query.filter_by(handle=prod_handle).first()
-            if not result:
-                abort(404, message='no product by that handle')
-            return result
-        abort(400, "Incomplete request - missing prod_handle")
+            result = self.product_check(prod_handle)
+            body = InventoryBuilder(handle=result.handle, weight=result.weight, price=result.price)
+            body.add_control_edit_product(result.handle)
+            body.add_control_delete_product(result.handle)
+            body.add_control("self", api.url_for(self, prod_handle=result.handle))
+            body.add_control("profile", "/profiles/product/")
+            body.add_control("collection", api.url_for(ProductCollection))
+            return Response(json.dumps(body), status=200, mimetype="application/vnd.mason+json")
+
+    def put(self, prod_handle):
+        if prod_handle is not None:
+            product = self.product_check(prod_handle)
+            if request.body.weight:
+                product.weight = request.body.weight
+            if request.body.price:
+                product.price = request.body.price
+            db.session.commit()
+            return Response(204)
+
+    def delete(self, prod_handle):
+        if prod_handle is not None:
+            result = self.product_check(prod_handle)
 
 
-class Inventory(Resource):
+class ProductCollection(Resource):
     def get(self):
         try:
             products = Product.query.all()
-            product_list = []
+            body = InventoryBuilder()
+            body.add_namespace('inventoryApi', '/')
+            body["items"] = []
             for product in products:
-                dict_product = {
-                    'handle': product.handle,
-                    'weight': product.weight,
-                    'price': product.price,
-                }
-                product_list.append(dict_product)
-            return product_list
+                item = InventoryBuilder(
+                    handle=product.handle,
+                    weight=float(product.weight),
+                    price=float(product.price),
+                )
+                item.add_control("self", api.url_for(ProductItem, prod_handle=product.handle))
+                item.add_control("profile", "/profiles/product/")
+                body["items"].append(item)
+            body.add_control("self", api.url_for(self))
+            body.add_control_add_product()
+            return Response(json.dumps(body), status=200, mimetype="application/vnd.mason+json")
         except ValueError:
-            abort(400, "Qty must be an integer")
+            abort(400, "price and weight must be numbers")
         except KeyError:
             abort(400, "Incomplete request - missing fields")
 
     def post(self):
         if not request.json:
-            abort(415)
+            body = MasonBuilder(resource_url=request.path)
+            body.add_error('Wrong content type', 'Request must be a json object')
+            return Response(json.dumps(body), status=415, mimetype="application/vnd.mason+json")
         try:
             handleStr = request.json["handle"]
             handleCheck = Product.query.filter_by(handle=handleStr).first()
@@ -80,13 +115,19 @@ class Inventory(Resource):
                 db.session.commit()
                 objectUri = api.url_for(ProductItem, prod_handle=prod.handle)
                 return Response(status=201, headers={"Location": objectUri}, mimetype='application/json')
-            abort(409)
-        except KeyError:
-            abort(400, "Incomplete request - missing fields")
-        except ValueError:
-            abort(400, "Weight and price must be numbers")
-        except TypeError:
-            abort(415, "Request content type must be JSON")
+
+            body = MasonBuilder(resource_url=request.path)
+            body.add_error('Duplicate Key', 'This handle already exists in the database')
+            return Response(json.dumps(body), status=409, mimetype="application/vnd.mason+json")
+
+        except (KeyError, ValueError):
+            body = MasonBuilder(resource_url=request.path)
+            body.add_error('Schema validation failed', 'Request didnt match the schema')
+            return Response(json.dumps(body), status=409, mimetype="application/vnd.mason+json")
+
+
+api.add_resource(ProductCollection, '/api/products/')
+api.add_resource(ProductItem, '/api/products/<prod_handle>/')
 
 
 # HYPERMEDIA BUILDERS #
@@ -164,6 +205,15 @@ class InventoryBuilder(MasonBuilder):
             schema=self.item_schema()
         )
 
+
+@app.route('/api/')
+def entry():
+    body = InventoryBuilder()
+    body.add_namespace('inventoryApi', '/')
+    body.add_control_all_products()
+    return body
+
+
 # class test():
 #     inventory = InventoryBuilder()
 #     inventory.add_control_add_product()
@@ -171,8 +221,6 @@ class InventoryBuilder(MasonBuilder):
 #     print(inventory)
 
 
-api.add_resource(Inventory, '/api/products/')
-api.add_resource(ProductItem, '/api/products/<prod_handle>/')
 
 
 
