@@ -1,5 +1,5 @@
 import json
-from flask import Flask, request, abort, Response
+from flask import Flask, request, Response
 from flask_sqlalchemy import SQLAlchemy
 from flask_restful import Resource, Api
 from sqlalchemy.engine import Engine
@@ -59,71 +59,93 @@ class ProductItem(Resource):
             return Response(json.dumps(body), status=200, mimetype="application/vnd.mason+json")
 
     def put(self, prod_handle):
-        if prod_handle is not None:
-            product = self.product_check(prod_handle)
-            if request.body.weight:
-                product.weight = request.body.weight
-            if request.body.price:
-                product.price = request.body.price
-            db.session.commit()
-            return Response(204)
+        try:
+            if not request.json:
+                body = MasonBuilder(resource_url=request.path)
+                body.add_error('Wrong content type', 'Request must be a json object')
+
+                return Response(json.dumps(body), status=415, mimetype="application/vnd.mason+json")
+
+            if prod_handle is not None:
+                product = self.product_check(prod_handle)
+
+                if Product.query.filter_by(handle=request.json['handle']).first() and prod_handle != request.json["handle"]:
+                    body = MasonBuilder(resource_url=request.path)
+                    body.add_error('Duplicate Key', 'This handle already exists in the database')
+
+                    return Response(json.dumps(body), status=409, mimetype="application/vnd.mason+json")
+
+                product.handle = request.json["handle"]
+                product.price = float(request.json['price'])
+                product.weight = float(request.json["weight"])
+                db.session.commit()
+                objectUri = api.url_for(ProductItem, prod_handle=product.handle)
+
+                return Response(status=204, headers={"Location": objectUri}, mimetype='application/json')
+
+        except (KeyError, ValueError):
+            body = MasonBuilder(resource_url=request.path)
+            body.add_error('Schema validation failed', 'Request didnt match the schema')
+            return Response(json.dumps(body), status=400, mimetype="application/vnd.mason+json")
 
     def delete(self, prod_handle):
         if prod_handle is not None:
             result = self.product_check(prod_handle)
+            db.session.delete(result)
+            db.session.commit()
+            return Response(status=204, mimetype='application/json')
 
 
 class ProductCollection(Resource):
     def get(self):
-        try:
-            products = Product.query.all()
-            body = InventoryBuilder()
-            body.add_namespace('inventoryApi', '/')
-            body["items"] = []
-            for product in products:
-                item = InventoryBuilder(
-                    handle=product.handle,
-                    weight=float(product.weight),
-                    price=float(product.price),
-                )
-                item.add_control("self", api.url_for(ProductItem, prod_handle=product.handle))
-                item.add_control("profile", "/profiles/product/")
-                body["items"].append(item)
-            body.add_control("self", api.url_for(self))
-            body.add_control_add_product()
-            return Response(json.dumps(body), status=200, mimetype="application/vnd.mason+json")
-        except ValueError:
-            abort(400, "price and weight must be numbers")
-        except KeyError:
-            abort(400, "Incomplete request - missing fields")
+        products = Product.query.all()
+        body = InventoryBuilder()
+        body.add_namespace('inventoryApi', '/api/products/')
+        body["items"] = []
+        for product in products:
+            item = InventoryBuilder(
+                handle=product.handle,
+                weight=float(product.weight),
+                price=float(product.price),
+            )
+            item.add_control("self", api.url_for(ProductItem, prod_handle=product.handle))
+            item.add_control("profile", "/profiles/product/")
+            body["items"].append(item)
+        body.add_control("self", api.url_for(self))
+        body.add_control_add_product()
+        body.add_control_all_products()
+        return Response(json.dumps(body), status=200, mimetype="application/vnd.mason+json")
 
     def post(self):
         if not request.json:
             body = MasonBuilder(resource_url=request.path)
             body.add_error('Wrong content type', 'Request must be a json object')
+
             return Response(json.dumps(body), status=415, mimetype="application/vnd.mason+json")
         try:
+
             handleStr = request.json["handle"]
             handleCheck = Product.query.filter_by(handle=handleStr).first()
-            if not handleCheck:
-                prod = Product(
-                    handle=request.json["handle"],
-                    price=float(request.json["price"]),
-                    weight=float(request.json["weight"])
-                )
-                db.session.add(prod)
-                db.session.commit()
-                objectUri = api.url_for(ProductItem, prod_handle=prod.handle)
-                return Response(status=201, headers={"Location": objectUri}, mimetype='application/json')
+            if handleCheck:
+                body = MasonBuilder(resource_url=request.path)
+                # LOL
+                price = request.json["price"]
+                body.add_error('Duplicate Key', 'This handle already exists in the database')
+                return Response(json.dumps(body), status=409, mimetype="application/vnd.mason+json")
 
-            body = MasonBuilder(resource_url=request.path)
-            body.add_error('Duplicate Key', 'This handle already exists in the database')
-            return Response(json.dumps(body), status=409, mimetype="application/vnd.mason+json")
-
+            prod = Product(
+                handle=request.json["handle"],
+                price=float(request.json["price"]),
+                weight=float(request.json["weight"])
+            )
+            db.session.add(prod)
+            db.session.commit()
+            objectUri = api.url_for(ProductItem, prod_handle=prod.handle)
+            return Response(status=201, headers={"Location": objectUri}, mimetype='application/json')
         except (KeyError, ValueError):
             body = MasonBuilder(resource_url=request.path)
             body.add_error('Schema validation failed', 'Request didnt match the schema')
-            return Response(json.dumps(body), status=409, mimetype="application/vnd.mason+json")
+            return Response(json.dumps(body), status=400, mimetype="application/vnd.mason+json")
 
 
 api.add_resource(ProductCollection, '/api/products/')
@@ -209,10 +231,13 @@ class InventoryBuilder(MasonBuilder):
 @app.route('/api/')
 def entry():
     body = InventoryBuilder()
-    body.add_namespace('inventoryApi', '/')
+    body.add_namespace('storage', '/api/products/')
     body.add_control_all_products()
-    return body
+    return Response(json.dumps(body), status=200, mimetype="application/vnd.mason+json")
 
+@app.route('/profiles/product/')
+def productProf():
+    return 'product profile'
 
 # class test():
 #     inventory = InventoryBuilder()
